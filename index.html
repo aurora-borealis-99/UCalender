@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        #bg-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #fdf6e3; background-size: cover; background-position: center; z-index: -1; transition: 0.5s; }
+        body { margin: 0; padding: 20px 8px; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; box-sizing: border-box; }
+        .calendar-box { background: white; width: calc(100vw - 16px); max-width: 1000px; padding: 12px 8px; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); position: relative; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
+        .has-bg .calendar-box { background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+        .has-bg #calendarNameDisplay {text-shadow: 0 1px 4px rgba(255,255,255,0.8);}
+        .has-bg .cell, .has-bg .empty-cell { background: rgba(255, 255, 255, 0.2) !important; border-color: rgba(238, 238, 238, 0.6) !important; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 0 15px; }
+        .title { font-size: 16px; color: #4a5568; font-weight: bold; cursor: pointer; border-bottom: 1px dashed #cbd5e0; }
+        .btn { cursor: pointer; border: none; background: #f0f2f5; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .week-header { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; color: #a0aec0; font-size: 10px; margin-bottom: 5px; }
+        .date-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 90px; border: 1px solid #eee; width: 100%; }
+        .cell, .empty-cell { background: white; padding: 2px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; box-sizing: border-box; }
+        .cell { cursor: pointer; position: relative; }
+        .date-row { display: flex; align-items: baseline; gap: 3px; height: 18px; pointer-events: none; }
+        .s { font-size: 14px; color: #2d3748; font-weight: bold; }
+        .l { font-size: 9px; color: #a0aec0; transform: scale(0.85); transform-origin: left; }
+        #event-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 90px; }
+        .event-bar { position: relative; opacity: 0.8; font-size: 11px; padding: 2px 4px; border-radius: 4px; z-index: 10; pointer-events: auto; cursor: pointer; display: flex !important; flex-direction: column; overflow: hidden; box-sizing: border-box; line-height: 1.1; }
+        #yearView { display: none; padding: 5px; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; box-sizing: border-box; }
+        .year-month-card { border: 1px solid #eee; border-radius: 8px; padding: 8px; cursor: pointer; background: white; }
+        .ym-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; margin-top: 4px; }
+        .ym-day { font-size: 8px; text-align: center; height: 12px; color: #718096; position: relative; }
+        .dot-mark { width: 2px; height: 2px; background: #4fd1c5; border-radius: 50%; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); }
+        #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.3); z-index: 999; display: none; }
+        #editor-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 12px; border-radius: 12px; z-index: 1000; width: 92%; max-width: 420px; box-sizing: border-box; }
+        .tool-group { display: flex; align-items: center; gap: 3px; margin-bottom: 8px; flex-wrap: nowrap; overflow-x: auto; }
+        .tool-btn { background: #f8fafc; border: 1px solid #e2e8f0; min-width: 28px; height: 26px; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+        .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.05); cursor: pointer; }
+        #editor-field { width: 100%; min-height: 120px; max-height: 300px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin: 45px 0 8px 0; outline: none; overflow-y: auto; display: flex; flex-direction: column; background: #fff; box-sizing: border-box; }
+        .selected { background-color: #ebf8ff !important; border: 1px solid #4299e1 !important; }
+        .data-btn { font-size: 10px; color: #94a3b8; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 4px; cursor: pointer; margin-right: 2px; }
+        
+        /* Logo 上传按钮样式 - 已移至此处 */
+        .logo-upload-btn {
+            background: #f8fafc;
+            border: 2px dashed #e2e8f0;
+            color: #94a3b8;
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            text-align: center;
+            font-size: 11px;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .logo-upload-btn:hover { border-color: #cbd5e0; color: #64748b; background: #f1f5f9; }
+        .logo-preview-img { height: 32px; width: auto; display: none; margin-bottom: 4px; border-radius: 4px; }
+    </style>
+</head>
+<body id="body-tag">
+    <div id="bg-layer"></div>
+    <div id="modal-overlay" onclick="closeModal()"></div>
+    
+    <div id="editor-modal">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 8px; background: #f1f5f9; padding: 6px; border-radius: 6px;">
+            范围: <select id="startDaySelect"></select> — <select id="endDaySelect"></select> 日
+        </div>
+        <div class="tool-group">
+            <button class="tool-btn" onmousedown="exec(event,'bold')">B</button>
+            <button class="tool-btn" onmousedown="exec(event,'italic')">I</button>
+            <button class="tool-btn" onmousedown="exec(event,'underline')">U</button>
+            <div style="width:1px;height:14px;background:#ddd"></div>
+            <div class="dot" style="background:#000" onmousedown="setStyle(event,'color','#000')"></div>
+            <div class="dot" style="background:#e53e3e" onmousedown="setStyle(event,'color','#e53e3e')"></div>
+            <div class="dot" style="background:#3182ce" onmousedown="setStyle(event,'color','#3182ce')"></div>
+            <div class="dot" style="background:#38a169" onmousedown="setStyle(event,'color','#38a169')"></div>
+            <div class="dot" style="background:#805ad5" onmousedown="setStyle(event,'color','#805ad5')"></div>
+            <div class="dot" style="background:#ed8936" onmousedown="setStyle(event,'color','#ed8936')"></div>
+            <div class="dot" style="background:#fff;border:1px solid #ddd" onmousedown="setStyle(event,'color','#fff')"></div>
+        </div>
+        <div class="tool-group">
+            <button class="tool-btn" onmousedown="setStyle(event,'fontSize','14px')">小</button>
+            <button class="tool-btn" onmousedown="setStyle(event,'fontSize','20px')">中</button>
+            <button class="tool-btn" onmousedown="setStyle(event,'fontSize','28px')">大</button>
+            <button class="tool-btn" onmousedown="setStyle(event,'fontSize','36px')">特</button>
+            <button class="tool-btn" onmousedown="setStyle(event,'fontSize','42px')">巨</button>
+            <div style="width:1px;height:14px;background:#ddd"></div>
+            <button class="tool-btn" onmousedown="exec(event,'justifyLeft')">←</button>
+            <button class="tool-btn" onmousedown="exec(event,'justifyCenter')">↔</button>
+            <button class="tool-btn" onmousedown="exec(event,'justifyRight')">→</button>
+            <div style="width:1px;height:14px;background:#ddd"></div>
+            <button class="tool-btn" onmousedown="setAlign(event,'flex-start')">↑</button>
+            <button class="tool-btn" onmousedown="setAlign(event,'center')">↕</button>
+            <button class="tool-btn" onmousedown="setAlign(event,'flex-end')">↓</button>
+        </div>
+        <div class="tool-group">
+            <span style="font-size:10px;color:#999">底色:</span>
+            <div class="dot" style="background:#FFD1DC" onclick="setBarColor('#FFD1DC')"></div>
+            <div class="dot" style="background:#B2F2BB" onclick="setBarColor('#B2F2BB')"></div>
+            <div class="dot" style="background:#A5D8FF" onclick="setBarColor('#A5D8FF')"></div>
+            <div class="dot" style="background:#FFF3BF" onclick="setBarColor('#FFF3BF')"></div>
+            <div class="dot" style="background:#E5DBFF" onclick="setBarColor('#E5DBFF')"></div>
+            <div class="dot" style="background:#f1f5f9;border:1px solid #ddd" onclick="setBarColor('#f1f5f9')"></div>
+        </div>
+        <div id="editor-field" contenteditable="true"></div>
+        <div style="display:flex; justify-content: space-between; align-items: center; border-top:1px solid #eee; padding-top:10px;">
+            <div>
+                <button id="delBtn" style="color:#e53e3e;background:none;border:none;font-size:10px;cursor:pointer" onclick="deleteEvent()">删除</button>
+                <button class="data-btn" onclick="exportData()">备份</button>
+                <button class="data-btn" onclick="importData()">还原</button>
+                <button class="data-btn" onclick="changeBg()">背景</button>
+            </div>
+            <button style="background:#4fd1c5;color:white;border:none;padding:8px 24px;border-radius:6px;cursor:pointer;font-weight:bold" onclick="saveEvent()">保存</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:10px; color:#94a3b8; margin-top:8px; border-top:1px dashed #eee; padding-top:8px;">
+            <span>透明</span>
+            <input type="range" id="bgOpacityRange" min="0" max="1" step="0.1" oninput="updateBgOpacity(this.value)">
+            <span id="opVal">0.5</span>
+            <span>模糊</span>
+            <input type="range" id="blurRange" min="0" max="25" step="1" oninput="updateBlur(this.value)">
+            <span id="blVal">4</span>
+        </div>
+    </div>
+
+    <div class="calendar-box" id="mainBox">
+        <div id="calendar-title-container" style="
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    padding: 15px 10px 5px 10px; 
+    min-height: 48px; 
+    position: relative;
+">
+    <div id="logo-wrapper" style="flex: 1; display: flex; justify-content: flex-end; padding-right: 12px;">
+        <img id="calendarLogoDisplay" src="" style="display: none; height: 40px; width: auto; max-width: 120px; cursor: pointer;" ondblclick="openNameModal()">
+    </div>
+
+    <div id="calendarNameDisplay" style="
+        cursor: pointer; 
+        font-size: 18px; 
+        font-weight: bold; 
+        color: #2d3748; 
+        white-space: nowrap; 
+        user-select: none;
+        text-align: center;
+    " ondblclick="openNameModal()">
+        双击设置日历名称
+    </div>
+
+    <div id="logo-placeholder" style="flex: 1;"></div>
+</div>
+
+        <div id="name-modal" style="display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 12px; z-index: 1001; width: 85%; max-width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+            <h3 style="margin-top:0; font-size: 15px; color: #64748b;">设置日历标题</h3>
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">日历 Logo：</div>
+            <div class="tool-group" style="margin-bottom: 15px; flex-direction: column; align-items: flex-start;">
+                <div id="logoUploadArea" class="logo-upload-btn" onclick="triggerLogoUpload()">
+                    <img id="logoEditPreview" src="" class="logo-preview-img">
+                    <span id="logoUploadText">点击上传 LOGO 图片</span>
+                </div>
+                <button id="delLogoBtn" style="color:#e53e3e;background:none;border:none;font-size:10px;cursor:pointer;display:none;padding: 0 4px;" onclick="deleteLogo()">删除 LOGO</button>
+            </div>
+            <input type="text" id="nameEditInput" placeholder="输入标题..." style="width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; outline: none; font-size: 16px;">
+            
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">文字颜色：</div>
+            <div class="tool-group" style="margin-bottom: 15px;">
+                <div class="dot" style="background:#2d3748" onclick="setTitleStyle('color','#2d3748')"></div>
+                <div class="dot" style="background:#e53e3e" onclick="setTitleStyle('color','#e53e3e')"></div>
+                <div class="dot" style="background:#3182ce" onclick="setTitleStyle('color','#3182ce')"></div>
+                <div class="dot" style="background:#38a169" onclick="setTitleStyle('color','#38a169')"></div>
+                <div class="dot" style="background:#d69e2e" onclick="setTitleStyle('color','#d69e2e')"></div>
+                <div class="dot" style="background:#805ad5" onclick="setTitleStyle('color','#805ad5')"></div>
+            </div>
+
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">字体大小：</div>
+            <div class="tool-group" style="margin-bottom: 20px;">
+                <button class="tool-btn" onclick="setTitleStyle('fontSize','16px')">小</button>
+                <button class="tool-btn" onclick="setTitleStyle('fontSize','22px')">中</button>
+                <button class="tool-btn" onclick="setTitleStyle('fontSize','28px')">大</button>
+                <button class="tool-btn" onclick="setTitleStyle('fontSize','36px')">特</button>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+                <button onclick="closeNameModal()" style="background:#f8fafc; border:1px solid #e2e8f0; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px;">取消</button>
+                <button onclick="dbSaveCalendarName()" style="background:#4fd1c5; color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">保存全部</button>
+            </div>
+        </div>
+
+        <div class="header">
+            <button class="btn" onclick="changeMonth(-1)">‹</button>
+            <div id="monthDisplay" class="title" onclick="toggleView()"></div>
+            <button class="btn" onclick="changeMonth(1)">›</button>
+        </div>
+        <div id="monthView">
+            <div class="week-header"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div>
+            <div style="position:relative">
+                <div id="dateGrid" class="date-grid"></div>
+                <div id="event-layer"></div>
+            </div>
+        </div>
+        <div id="yearView"></div>
+        <div id="adminTrigger" style="text-align:center;font-size:10px;color:#a0aec0;margin-top:15px;cursor:pointer">© 2026 🤿宇宙级潜水员🐟 版权所有</div>
+    </div>
+
+    <script>
+        const S_URL = "https://cnbarxcyhtuyympqwspb.supabase.co";
+        const S_KEY = "sb_publishable_8lKRoBeyMpq8UEYugqvn7g_3_iImIur";
+        const _db = supabase.createClient(S_URL, S_KEY);
+
+        let currentDate = new Date(), viewMode = 'month', selection = [], currentBarColor = '#B2F2BB', editingId = null, events = [];
+        let uc = 0; 
+        
+        const checkAuth = () => {
+            try {
+                const auth = localStorage.getItem('admin_auth_data');
+                if (!auth) return false;
+                const data = JSON.parse(auth);
+                if (Date.now() - data.loginTime < 86400000) return true;
+                localStorage.removeItem('admin_auth_data'); 
+                return false;
+            } catch (e) { return false; }
+        };
+
+        let isAdmin = checkAuth();
+
+        const trigger = document.getElementById('adminTrigger');
+        if (trigger) {
+            trigger.onclick = () => {
+                if (++uc >= 5) {
+                    const pass = prompt("管理员验证码（24h有效）：");
+                    if (pass === "5323888") {
+                        localStorage.setItem('admin_auth_data', JSON.stringify({
+                            is_admin: true, loginTime: Date.now()
+                        }));
+                        alert("解锁成功，有效期24小时 ⏳");
+                        location.reload(); 
+                    } else { alert("验证码错误"); }
+                    uc = 0;
+                }
+            };
+        }
+
+        // --- 背景和样式 ---
+        function updateBlur(val) {
+            const bg = document.getElementById('bg-layer');
+            if(bg) bg.style.filter = `blur(${val}px)`;
+            const blVal = document.getElementById('blVal');
+            if(blVal) blVal.innerText = val;
+            saveMonthStyle('blur', val);
+        }
+
+        function updateBgOpacity(val) {
+            const bg = document.getElementById('bg-layer');
+            if(bg) bg.style.opacity = val;
+            const opVal = document.getElementById('opVal');
+            if(opVal) opVal.innerText = val;
+            saveMonthStyle('opacity', val);
+        }
+
+        function saveMonthStyle(key, val) {
+            const y = currentDate.getFullYear(), m = currentDate.getMonth();
+            const monthKey = `${y}-${m}`;
+            let styles = JSON.parse(localStorage.getItem('monthStyles') || '{}');
+            if (!styles[monthKey]) styles[monthKey] = {};
+            styles[monthKey][key] = val;
+            localStorage.setItem('monthStyles', JSON.stringify(styles));
+        }
+
+        async function syncData() {
+            const y = currentDate.getFullYear(), m = currentDate.getMonth();
+            const cacheKey = `events_cache_${y}_${m}`;
+            const localData = localStorage.getItem(cacheKey);
+            if (localData) { events = JSON.parse(localData); renderCalendar(); }
+            try {
+                const { data, error } = await _db.from('events').select('*').eq('year', y).eq('month', m);
+                if (!error && data) {
+                    events = data;
+                    localStorage.setItem(cacheKey, JSON.stringify(data));
+                    renderCalendar();
+                }
+            } catch (err) { console.error("同步失败:", err); }
+        }
+
+        function getLunar(y, m, d) {
+            const dateObj = new Date(y, m, d);
+            const lunar = new Intl.DateTimeFormat('zh-u-ca-chinese', {day:'numeric'}).format(dateObj);
+            if (lunar === '1日') return new Intl.DateTimeFormat('zh-u-ca-chinese', {month:'long'}).format(dateObj);
+            const num = parseInt(lunar), units = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+            if (num <= 10) return "初" + units[num];
+            if (num < 20) return "十" + units[num % 10];
+            if (num === 20) return "二十";
+            if (num < 30) return "廿" + units[num % 10];
+            return "三十";
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('dateGrid'), layer = document.getElementById('event-layer');
+            if (!grid || !layer) return;
+            grid.innerHTML = ''; layer.innerHTML = '';
+            const y = currentDate.getFullYear(), m = currentDate.getMonth();
+
+            const styles = JSON.parse(localStorage.getItem('monthStyles') || '{}');
+            const currentStyle = styles[`${y}-${m}`] || { blur: 4, opacity: 0.5 };
+            
+            const bSlider = document.getElementById('blurRange');
+            const oSlider = document.getElementById('bgOpacityRange');
+            if(bSlider) { bSlider.value = currentStyle.blur; document.getElementById('blVal').innerText = currentStyle.blur; }
+            if(oSlider) { oSlider.value = currentStyle.opacity; document.getElementById('opVal').innerText = currentStyle.opacity; }
+            
+            const bg = document.getElementById('bg-layer');
+            if(bg) {
+                bg.style.filter = `blur(${currentStyle.blur}px)`;
+                bg.style.opacity = currentStyle.opacity;
+            }
+
+            const displayEl = document.getElementById('monthDisplay');
+            if(displayEl) displayEl.innerText = `${y}年 ${m+1}月`;
+
+            const first = new Date(y, m, 1).getDay();
+            const dInM = new Date(y, m + 1, 0).getDate();
+
+            for (let i = 0; i < first; i++) grid.innerHTML += '<div class="empty-cell"></div>';
+            let dateMap = {};
+            for (let d = 1; d <= dInM; d++) {
+                grid.innerHTML += `<div class="cell" onclick="handleCellClick(${d})" id="cell-${d}"><div class="date-row"><span class="s">${d}</span><span class="l">${getLunar(y,m,d)}</span></div></div>`;
+                dateMap[d] = { row: Math.floor((first + d - 1) / 7) + 1, col: ((first + d - 1) % 7) + 1 };
+            }
+            const remaining = (7 - ((first + dInM) % 7)) % 7;
+            for (let i = 0; i < remaining; i++) grid.innerHTML += '<div class="empty-cell"></div>';
+
+            const monthEvents = events.filter(ev => ev.year === y && ev.month === m);
+            const sortedEvents = [...monthEvents].sort((a, b) => a.start - b.start || (a.end - b.end));
+            const eventSlots = {}; 
+            sortedEvents.forEach(ev => {
+                let slot = 0;
+                while (true) {
+                    const isOccupied = monthEvents.some(other => eventSlots[other.id] === slot && !(other.end < ev.start || other.start > ev.end));
+                    if (!isOccupied) { eventSlots[ev.id] = slot; break; }
+                    slot++;
+                }
+            });
+
+            const maxSlotsPerDay = {};
+            for (let d = 1; d <= dInM; d++) {
+                const daySlots = monthEvents.filter(ev => d >= ev.start && d <= ev.end).map(ev => eventSlots[ev.id]);
+                maxSlotsPerDay[d] = daySlots.length > 0 ? Math.max(...daySlots) + 1 : 0;
+            }
+
+            monthEvents.forEach(ev => {
+                if(!dateMap[ev.start] || !dateMap[ev.end]) return;
+                const slot = eventSlots[ev.id];
+                let maxLen = -1, bestRow = -1;
+                for(let r = dateMap[ev.start].row; r <= dateMap[ev.end].row; r++){
+                    const sC = (r === dateMap[ev.start].row) ? dateMap[ev.start].col : 1;
+                    const eC = (r === dateMap[ev.end].row) ? dateMap[ev.end].col : 7;
+                    if ((eC - sC + 1) > maxLen) { maxLen = eC - sC + 1; bestRow = r; }
+                }
+                for(let r = dateMap[ev.start].row; r <= dateMap[ev.end].row; r++){
+                    const sC = (r === dateMap[ev.start].row) ? dateMap[ev.start].col : 1;
+                    const eC = (r === dateMap[ev.end].row) ? dateMap[ev.end].col : 7;
+                    const bar = document.createElement('div');
+                    bar.className = 'event-bar';
+                    bar.style.gridColumn = `${sC}/${eC+1}`;
+                    bar.style.gridRow = r;
+                    bar.style.backgroundColor = ev.barColor || ev.color;
+                    bar.style.textAlign = ev.textAlign || 'left';
+                    bar.style.justifyContent = ev.alignItems || 'flex-start';
+                    let maxConflict = 0;
+                    for (let d = ev.start; d <= ev.end; d++) maxConflict = Math.max(maxConflict, maxSlotsPerDay[d] || 0);
+                    const bH = (65 / (maxConflict || 1)) - 1;
+                    bar.style.height = `${bH}px`;
+                    bar.style.marginTop = `${22 + slot * (bH + 1)}px`;
+                    if(r === bestRow) bar.innerHTML = ev.text || ev.content || '';
+                    bar.onclick = (e) => { e.stopPropagation(); if(isAdmin) openEditModal(ev.id); };
+                    layer.appendChild(bar);
+                }
+            });
+            updateDisplayBg();
+        }
+
+        async function saveEvent() {
+            const f = document.getElementById('editor-field'), sVal = parseInt(document.getElementById('startDaySelect').value), eVal = parseInt(document.getElementById('endDaySelect').value);
+            const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+            const data = {
+                content: f.innerHTML, start: Math.min(Math.min(sVal, eVal), lastDay), end: Math.min(Math.max(sVal, eVal), lastDay),
+                year: currentDate.getFullYear(), month: currentDate.getMonth(), color: currentBarColor,
+                textAlign: f.style.textAlign || 'left', alignItems: f.style.alignItems || 'flex-start'
+            };
+            if(editingId) { await _db.from('events').update(data).eq('id', editingId); }
+            else { await _db.from('events').insert([{ id: Math.floor(Date.now()/1000), ...data }]); }
+            closeModal(); syncData();
+        }
+
+        function openEditModal(id, s, e) {
+            if (!isAdmin) return;
+            editingId = id;
+            const f = document.getElementById('editor-field'), sS = document.getElementById('startDaySelect'), eS = document.getElementById('endDaySelect');
+            const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+            sS.innerHTML = eS.innerHTML = ''; 
+            for(let i = 1; i <= lastDay; i++) { sS.innerHTML += `<option value="${i}">${i}</option>`; eS.innerHTML += `<option value="${i}">${i}</option>`; }
+            if(id) {
+                const ev = events.find(i => i.id == id);
+                f.innerHTML = ev.text || ev.content || '';
+                sS.value = ev.start; eS.value = ev.end;
+                currentBarColor = ev.barColor || ev.color;
+                f.style.textAlign = ev.textAlign || 'left'; f.style.alignItems = ev.alignItems || 'flex-start';
+                document.getElementById('delBtn').style.display = 'block';
+            } else {
+                f.innerHTML = ''; sS.value = Math.min(s, lastDay); eS.value = Math.min(e, lastDay);
+                currentBarColor = '#B2F2BB'; f.style.textAlign = 'left'; f.style.alignItems = 'flex-start';
+                document.getElementById('delBtn').style.display = 'none';
+            }
+            document.getElementById('modal-overlay').style.display = 'block';
+            document.getElementById('editor-modal').style.display = 'block';
+        }
+
+        function setStyle(e, p, v) { e.preventDefault(); const sel = window.getSelection(); if (!sel.rangeCount || sel.toString().length === 0) return; const range = sel.getRangeAt(0); const span = document.createElement('span'); span.style[p] = v; span.style.lineHeight = "1.2"; span.appendChild(range.extractContents()); range.insertNode(span); sel.removeAllRanges(); }
+        function exec(e, c) { e.preventDefault(); document.execCommand(c, false, null); }
+        function setAlign(e,v){ e.preventDefault(); document.getElementById('editor-field').style.alignItems=v; }
+        function setBarColor(c) { currentBarColor = c; }
+        
+        function changeBg(){ 
+            if(!isAdmin) return alert("请先解锁权限");
+            const i=document.createElement("input"); i.type="file"; 
+            i.onchange=e=>{ 
+                const r=new FileReader(); 
+                r.onload=ev=>{ 
+                    const img = new Image(); img.src = ev.target.result;
+                    img.onload = async () => { 
+                        const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+                        const maxW = 2000; const scale = maxW / img.width;
+                        canvas.width = maxW; canvas.height = img.height * scale;
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        const compressed = canvas.toDataURL('image/png'); 
+                        const bgId = `bg_${currentDate.getFullYear()}_${currentDate.getMonth()}`;
+                        localStorage.setItem(bgId, compressed); 
+                        await _db.from('configs').upsert([{ id: bgId, value: compressed }]);
+                        updateDisplayBg(); 
+                    }; 
+                }; r.readAsDataURL(e.target.files[0]); 
+            }; i.click(); 
+        }
+
+        async function updateDisplayBg() { 
+            const bgId = `bg_${currentDate.getFullYear()}_${currentDate.getMonth()}`;
+            try {
+                const { data } = await _db.from('configs').select('value').eq('id', bgId).single();
+                let s = data ? data.value : localStorage.getItem(bgId);
+                if(s){ document.getElementById('bg-layer').style.backgroundImage=`url(${s})`; document.getElementById('body-tag').classList.add('has-bg'); } 
+                else { document.getElementById('bg-layer').style.backgroundImage='none'; document.getElementById('body-tag').classList.remove('has-bg'); } 
+            } catch(e) { console.log("背景加载略过"); }
+        }
+
+        function exportData(){ const b=new Blob([JSON.stringify(events)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='calendar_backup.json'; a.click(); }
+        function importData(){ const i=document.createElement('input'); i.type='file'; i.onchange=e=>{ const r=new FileReader(); r.onload=async ev=>{ const newData=JSON.parse(ev.target.result); for(let d of newData){ await _db.from('events').upsert(d); } syncData(); }; r.readAsText(e.target.files[0]); }; i.click(); }
+        function toggleView() { viewMode=(viewMode==='month'?'year':'month'); document.getElementById('monthView').style.display=(viewMode==='month'?'block':'none'); document.getElementById('yearView').style.display=(viewMode==='year'?'grid':'none'); if(viewMode==='year') renderYear(); else renderCalendar(); }
+        function renderYear() { const yv=document.getElementById('yearView'); yv.innerHTML=''; const y=currentDate.getFullYear(); document.getElementById('monthDisplay').innerText=`${y}年 全览`; for(let m=0; m<12; m++) { const card=document.createElement('div'); card.className='year-month-card'; card.onclick=()=>{currentDate.setMonth(m); viewMode='month'; document.getElementById('monthView').style.display='block'; document.getElementById('yearView').style.display='none'; syncData();}; let h=`<div style="font-size:11px;font-weight:bold">${m+1}月</div><div class="ym-grid">`; const first=new Date(y,m,1).getDay(), dInM=new Date(y,m+1,0).getDate(); for(let i=0; i<first; i++) h+='<div class="ym-day"></div>'; for(let d=1; d<=dInM; d++) { const has=events.some(ev=>ev.year===y && ev.month===m && d>=ev.start && d<=ev.end); h+=`<div class="ym-day">${d}${has?'<div class="dot-mark"></div>':''}</div>`; } card.innerHTML=h+'</div>'; yv.appendChild(card); } }
+        function handleCellClick(d) { if(!isAdmin) return; if (selection.length === 0) { selection.push(d); document.getElementById(`cell-${d}`).classList.add('selected'); } else { openEditModal(null, Math.min(selection[0], d), Math.max(selection[0], d)); } }
+        function closeModal() { document.getElementById('modal-overlay').style.display='none'; document.getElementById('editor-modal').style.display='none'; selection=[]; document.querySelectorAll('.cell').forEach(c=>c.classList.remove('selected')); }
+        async function deleteEvent() { if(confirm("删除？")) { await _db.from('events').delete().eq('id', editingId); closeModal(); syncData(); } }
+        function changeMonth(o) { currentDate.setMonth(currentDate.getMonth()+o); syncData(); }
+
+        // ==========================================
+        // 弹窗式日历标题 & Logo 功能
+        // ==========================================
+        let tempTitleStyle = { color: '#2d3748', fontSize: '18px' };
+        let currentLogoBase64 = null; 
+
+        function imgCompress(file, maxW, callback) {
+            const r = new FileReader();
+            r.onload = ev => {
+                const img = new Image();
+                img.src = ev.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if(img.width <= maxW) { callback(ev.target.result); return; }
+                    const scale = maxW / img.width;
+                    canvas.width = maxW;
+                    canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    callback(canvas.toDataURL('image/png'));
+                };
+            };
+            r.readAsDataURL(file);
+        }
+
+        function triggerLogoUpload() {
+            if(!isAdmin) return alert("请先解锁");
+            const i = document.createElement("input");
+            i.type = "file";
+            i.accept = "image/*";
+            i.onchange = e => {
+                const file = e.target.files[0];
+                if(!file) return;
+                imgCompress(file, 400, (compressed) => {
+                    currentLogoBase64 = compressed;
+                    const p = document.getElementById('logoEditPreview');
+                    if(p) { p.src = compressed; p.style.display = 'block'; }
+                    document.getElementById('logoUploadText').innerText = "点击更换 LOGO";
+                    document.getElementById('delLogoBtn').style.display = 'block';
+                });
+            };
+            i.click();
+        }
+
+        function deleteLogo() {
+            currentLogoBase64 = null;
+            document.getElementById('logoEditPreview').style.display = 'none';
+            document.getElementById('logoUploadText').innerText = "点击上传 LOGO 图片";
+            document.getElementById('delLogoBtn').style.display = 'none';
+        }
+
+        function openNameModal() {
+            if(!isAdmin) return alert("请点击底部©解锁权限");
+            const display = document.getElementById('calendarNameDisplay');
+            const input = document.getElementById('nameEditInput');
+            const logoDisplay = document.getElementById('calendarLogoDisplay');
+            
+            input.value = (display.innerText === "双击设置日历名称") ? "" : display.innerText;
+            input.style.color = display.style.color || '#2d3748';
+            input.style.fontSize = display.style.fontSize || '18px';
+            
+            if(logoDisplay && logoDisplay.style.display === 'inline-block') {
+                document.getElementById('logoEditPreview').src = logoDisplay.src;
+                document.getElementById('logoEditPreview').style.display = 'block';
+                document.getElementById('logoUploadText').innerText = "点击更换 LOGO";
+                document.getElementById('delLogoBtn').style.display = 'block';
+                currentLogoBase64 = logoDisplay.src;
+            } else {
+                deleteLogo();
+            }
+            
+            document.getElementById('modal-overlay').style.display = 'block';
+            document.getElementById('name-modal').style.display = 'block';
+        }
+
+        function closeNameModal() {
+            document.getElementById('modal-overlay').style.display = 'none';
+            document.getElementById('name-modal').style.display = 'none';
+        }
+
+        function setTitleStyle(prop, val) {
+            const input = document.getElementById('nameEditInput');
+            if(input) input.style[prop] = val;
+            tempTitleStyle[prop] = val;
+        }
+
+        async function dbSaveCalendarName() {
+            const text = document.getElementById('nameEditInput').value || "双击设置日历名称";
+            const fullData = {
+                text: text, color: tempTitleStyle.color,
+                fontSize: tempTitleStyle.fontSize, logo: currentLogoBase64
+            };
+            try {
+                const { error } = await _db.from('configs').upsert([{ id: 'global_calendar_name', value: JSON.stringify(fullData) }]);
+                if (error) throw error;
+                localStorage.setItem('customCalendarNameData', JSON.stringify(fullData));
+                closeNameModal();
+                location.reload(); 
+            } catch (err) { alert("云端保存失败"); }
+        }
+
+        async function dbLoadCalendarName() {
+            const display = document.getElementById('calendarNameDisplay');
+            const logoDisplay = document.getElementById('calendarLogoDisplay');
+            const applyData = (dataStr) => {
+                if(!dataStr) return;
+                try {
+                    const d = JSON.parse(dataStr);
+                    if(typeof d === 'object' && d !== null) {
+                        display.innerText = d.text || "双击设置日历名称";
+                        display.style.color = d.color || '#2d3748';
+                        display.style.fontSize = d.fontSize || '18px';
+                        tempTitleStyle = { color: d.color, fontSize: d.fontSize };
+                        if(d.logo && logoDisplay) {
+                            logoDisplay.src = d.logo;
+                            logoDisplay.style.display = 'inline-block';
+                        }
+                    } else { display.innerText = dataStr; }
+                } catch(e) { display.innerText = dataStr; }
+            };
+
+            const local = localStorage.getItem('customCalendarNameData');
+            if (local) applyData(local);
+
+            try {
+                const { data, error } = await _db.from('configs').select('value').eq('id', 'global_calendar_name').single();
+                if (!error && data && data.value) {
+                    applyData(data.value);
+                    localStorage.setItem('customCalendarNameData', data.value);
+                }
+            } catch (err) { console.log("标题加载完成"); }
+        }
+
+        async function initApp() {
+            await dbLoadCalendarName(); 
+            await syncData();            
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
